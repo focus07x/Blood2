@@ -21,10 +21,6 @@
       max-width: 600px;
       margin: 0 auto;
     }
-    .login-area {
-      text-align: center;
-      margin-bottom: 20px;
-    }
     .input-area {
       display: flex;
       gap: 8px;
@@ -53,28 +49,6 @@
     }
     button#add:hover {
       background: #27ae60;
-    }
-    button#add:disabled {
-      background: #bdc3c7;
-      cursor: not-allowed;
-    }
-    #googleLogin {
-      padding: 12px 24px;
-      background: #4285F4;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 16px;
-      cursor: pointer;
-      margin-bottom: 10px;
-    }
-    #googleLogin:hover {
-      background: #357ae8;
-    }
-    #userStatus {
-      margin: 0;
-      color: #555;
-      font-size: 0.95em;
     }
     .list {
       display: flex;
@@ -122,35 +96,31 @@
     .item.copied .status {
       opacity: 1;
     }
-    .empty, .loading {
+    .empty {
       text-align: center;
       color: #777;
       padding: 60px 0;
       font-style: italic;
     }
     .loading {
+      text-align: center;
       color: #3498db;
+      padding: 60px 0;
+      font-style: italic;
     }
   </style>
 </head>
 <body>
 
 <div class="container">
-  <h1>ลิ้งค์ไก่Blood</h1>
-
-  <div class="login-area">
-    <button id="googleLogin">ล็อกอินด้วย Google</button>
-    <p id="userStatus">ยังไม่ได้ล็อกอิน</p>
-  </div>
+  <h1>ลิ้งค์ไก่Blood (ทุกคนเห็นเหมือนกัน)</h1>
   
   <div class="input-area">
     <input type="text" id="input" placeholder="วางลิงก์ หรือข้อความที่มีลิงก์..." autocomplete="off"/>
-    <button id="add" disabled>เพิ่ม</button>
+    <button id="add">เพิ่ม</button>
   </div>
 
-  <div class="list" id="list">
-    <div class="loading">กำลังโหลด...</div>
-  </div>
+  <div class="list" id="list"><div class="loading">กำลังเชื่อมต่อ Supabase...</div></div>
 </div>
 
 <script type="module">
@@ -164,47 +134,45 @@
   const list = document.getElementById('list');
   const input = document.getElementById('input');
   const addBtn = document.getElementById('add');
-  const userStatus = document.getElementById('userStatus');
 
   let items = [];
-  let currentUserId = null;
 
   async function loadItems() {
-    if (!currentUserId) return [];
-    const { data, error } = await supabase
-      .from('blood_links')
-      .select('id, text, created_at')
-      .eq('owner', currentUserId)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return data || [];
+    try {
+      const { data, error } = await supabase
+        .from('blood_links')
+        .select('id, text')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    } catch (err) {
+      console.error('Load error:', err);
+      list.innerHTML = '<div class="empty">เชื่อมต่อ Supabase ล้มเหลว: ' + err.message + '</div>';
+      return [];
+    }
   }
 
   async function insertLink(text) {
-    if (!currentUserId) throw new Error('กรุณาล็อกอินก่อน');
-    const { error } = await supabase
-      .from('blood_links')
-      .insert({ text, owner: currentUserId });
-    if (error) throw error;
+    try {
+      const { error } = await supabase.from('blood_links').insert({ text });
+      if (error) throw error;
+    } catch (err) {
+      alert('เพิ่มลิงก์ไม่ได้: ' + err.message);
+    }
   }
 
   async function deleteLink(id) {
-    const { error } = await supabase
-      .from('blood_links')
-      .delete()
-      .eq('id', id)
-      .eq('owner', currentUserId);
-    if (error) throw error;
+    try {
+      const { error } = await supabase.from('blood_links').delete().eq('id', id);
+      if (error) throw error;
+    } catch (err) {
+      console.error('Delete error:', err);
+    }
   }
 
   async function loadAndRender() {
-    try {
-      items = await loadItems();
-      render();
-    } catch (err) {
-      console.error('Load/Render error:', err);
-      list.innerHTML = `<div class="empty">เกิดข้อผิดพลาด: ${err.message}</div>`;
-    }
+    items = await loadItems();
+    render();
   }
 
   function render() {
@@ -245,7 +213,6 @@
             await loadAndRender();
           }, 800);
         } catch (err) {
-          console.error('Clipboard error:', err);
           alert('คัดลอกไม่ได้ กรุณาลองใหม่');
         }
       });
@@ -258,80 +225,24 @@
     const val = input.value.trim();
     if (!val) return;
 
-    const urlRegex = /(https?:\/\/[^\s]+)/gi;
-    const matches = val.match(urlRegex);
-
+    const matches = val.match(/(https?:\/\/[^\s]+)/gi);
     if (!matches || matches.length === 0) {
       alert('ไม่พบลิงก์ในข้อความ กรุณาวางลิงก์จริง');
       return;
     }
 
-    try {
-      await insertLink(matches[0]);
-      input.value = '';
-      await loadAndRender();
-    } catch (error) {
-      console.error('Insert error:', error);
-      alert('เพิ่มลิงก์ไม่ได้: ' + error.message);
-    }
+    await insertLink(matches[0]);
+    input.value = '';
+    await loadAndRender();
   }
 
-  // Event listeners
   addBtn.addEventListener('click', addItem);
   input.addEventListener('keypress', e => {
     if (e.key === 'Enter') addItem();
   });
 
-  document.getElementById('googleLogin').addEventListener('click', async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: 'https://blood9.netlify.app/'  // แก้เป็น URL Netlify จริงของคุณ
-        }
-      });
-      if (error) throw error;
-    } catch (err) {
-      console.error('Google login error:', err);
-      userStatus.textContent = 'ล็อกอินล้มเหลว: ' + err.message;
-    }
-  });
-
-  // Auth state listener
-  supabase.auth.onAuthStateChange(async (event, session) => {
-    console.log('Auth event:', event, session ? session.user.email : 'no session');
-    if (session) {
-      currentUserId = session.user.id;
-      userStatus.textContent = `ล็อกอินแล้ว: ${session.user.email || 'Google User'}`;
-      addBtn.disabled = false;
-      await loadAndRender();
-    } else {
-      currentUserId = null;
-      userStatus.textContent = 'กรุณาล็อกอินด้วย Google เพื่อดู/เพิ่มลิงก์';
-      addBtn.disabled = true;
-      list.innerHTML = '<div class="empty">ล็อกอินเพื่อดูลิงก์ส่วนตัว</div>';
-    }
-  });
-
-  // Initial check session
-  (async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        currentUserId = session.user.id;
-        userStatus.textContent = `ล็อกอินแล้ว: ${session.user.email || 'Google User'}`;
-        addBtn.disabled = false;
-        await loadAndRender();
-      } else {
-        userStatus.textContent = 'กรุณาล็อกอินด้วย Google';
-        addBtn.disabled = true;
-        list.innerHTML = '<div class="empty">ล็อกอินเพื่อดูลิงก์</div>';
-      }
-    } catch (err) {
-      console.error('Initial session error:', err);
-      list.innerHTML = '<div class="empty">เชื่อมต่อ Supabase ล้มเหลว</div>';
-    }
-  })();
+  // โหลดครั้งแรก
+  loadAndRender();
 </script>
 
 </body>
