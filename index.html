@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>blood strike</title>
+  <title>ลิ้งค์ไก่Blood</title>
   <style>
     body {
       font-family: system-ui, -apple-system, sans-serif;
@@ -20,6 +20,10 @@
     .container {
       max-width: 600px;
       margin: 0 auto;
+    }
+    .login-area {
+      text-align: center;
+      margin-bottom: 20px;
     }
     .input-area {
       display: flex;
@@ -53,6 +57,24 @@
     button#add:disabled {
       background: #bdc3c7;
       cursor: not-allowed;
+    }
+    #googleLogin {
+      padding: 12px 24px;
+      background: #4285F4;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+      margin-bottom: 10px;
+    }
+    #googleLogin:hover {
+      background: #357ae8;
+    }
+    #userStatus {
+      margin: 0;
+      color: #555;
+      font-size: 0.95em;
     }
     .list {
       display: flex;
@@ -100,36 +122,14 @@
     .item.copied .status {
       opacity: 1;
     }
-    .empty {
+    .empty, .loading {
       text-align: center;
       color: #777;
       padding: 60px 0;
       font-style: italic;
     }
     .loading {
-      text-align: center;
       color: #3498db;
-      padding: 60px 0;
-      font-style: italic;
-    }
-    #googleLogin {
-      padding: 12px 24px;
-      background: #4285F4;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 16px;
-      cursor: pointer;
-      margin: 0 auto;
-      display: block;
-    }
-    #googleLogin:hover {
-      background: #357ae8;
-    }
-    #userStatus {
-      text-align: center;
-      margin: 10px 0;
-      color: #555;
     }
   </style>
 </head>
@@ -138,7 +138,7 @@
 <div class="container">
   <h1>ลิ้งค์ไก่Blood</h1>
 
-  <div style="text-align: center; margin-bottom: 20px;">
+  <div class="login-area">
     <button id="googleLogin">ล็อกอินด้วย Google</button>
     <p id="userStatus">ยังไม่ได้ล็อกอิน</p>
   </div>
@@ -148,14 +148,16 @@
     <button id="add" disabled>เพิ่ม</button>
   </div>
 
-  <div class="list" id="list"><div class="loading">กำลังโหลด...</div></div>
+  <div class="list" id="list">
+    <div class="loading">กำลังโหลด...</div>
+  </div>
 </div>
 
 <script type="module">
   import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
   const SUPABASE_URL = 'https://mkcjpgwlftinvhibyedo.supabase.co';
-  const SUPABASE_ANON_KEY = 'sb_publishable_sK-FZOtegGggqDXvrv_olQ_K690yvKf'; // แก้เป็น key จริงของคุณ (copy จาก Dashboard)
+  const SUPABASE_ANON_KEY = 'sb_publishable_sK-FZOtegGggqDXvrv_olQ_K690yvKf';
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -174,10 +176,7 @@
       .select('id, text, created_at')
       .eq('owner', currentUserId)
       .order('created_at', { ascending: false });
-    if (error) {
-      console.error('Load error:', error);
-      throw error;
-    }
+    if (error) throw error;
     return data || [];
   }
 
@@ -203,7 +202,8 @@
       items = await loadItems();
       render();
     } catch (err) {
-      list.innerHTML = '<div class="empty">เกิดข้อผิดพลาด: ' + err.message + '</div>';
+      console.error('Load/Render error:', err);
+      list.innerHTML = `<div class="empty">เกิดข้อผิดพลาด: ${err.message}</div>`;
     }
   }
 
@@ -236,17 +236,17 @@
       div.appendChild(textSpan);
       div.appendChild(status);
 
-      div.addEventListener('click', async (e) => {
-        if (e.detail === 2) return;
+      div.addEventListener('click', async () => {
         try {
-          await navigator.clipboard.writeText(div.dataset.text);
+          await navigator.clipboard.writeText(item.text);
           div.classList.add('copied');
           setTimeout(async () => {
-            await deleteLink(div.dataset.id);
+            await deleteLink(item.id);
             await loadAndRender();
           }, 800);
         } catch (err) {
-          alert('คัดลอกไม่ได้: ' + err.message);
+          console.error('Clipboard error:', err);
+          alert('คัดลอกไม่ได้ กรุณาลองใหม่');
         }
       });
 
@@ -255,14 +255,14 @@
   }
 
   async function addItem() {
-    let val = input.value.trim();
+    const val = input.value.trim();
     if (!val) return;
 
     const urlRegex = /(https?:\/\/[^\s]+)/gi;
     const matches = val.match(urlRegex);
 
     if (!matches || matches.length === 0) {
-      alert('ไม่พบลิงก์ในข้อความ');
+      alert('ไม่พบลิงก์ในข้อความ กรุณาวางลิงก์จริง');
       return;
     }
 
@@ -271,6 +271,7 @@
       input.value = '';
       await loadAndRender();
     } catch (error) {
+      console.error('Insert error:', error);
       alert('เพิ่มลิงก์ไม่ได้: ' + error.message);
     }
   }
@@ -286,18 +287,19 @@
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin + window.location.pathname
+          redirectTo: 'https://blood9.netlify.app/'  // แก้เป็น URL Netlify จริงของคุณ
         }
       });
       if (error) throw error;
     } catch (err) {
-      alert('ล็อกอิน Google ล้มเหลว: ' + err.message);
+      console.error('Google login error:', err);
+      userStatus.textContent = 'ล็อกอินล้มเหลว: ' + err.message;
     }
   });
 
-  // Handle auth state changes
+  // Auth state listener
   supabase.auth.onAuthStateChange(async (event, session) => {
-    console.log('Auth event:', event, session);
+    console.log('Auth event:', event, session ? session.user.email : 'no session');
     if (session) {
       currentUserId = session.user.id;
       userStatus.textContent = `ล็อกอินแล้ว: ${session.user.email || 'Google User'}`;
@@ -305,24 +307,29 @@
       await loadAndRender();
     } else {
       currentUserId = null;
-      userStatus.textContent = 'กรุณาล็อกอินด้วย Google เพื่อดู/เพิ่มลิงก์ส่วนตัว';
+      userStatus.textContent = 'กรุณาล็อกอินด้วย Google เพื่อดู/เพิ่มลิงก์';
       addBtn.disabled = true;
-      list.innerHTML = '<div class="empty">ล็อกอินเพื่อดูลิงก์</div>';
+      list.innerHTML = '<div class="empty">ล็อกอินเพื่อดูลิงก์ส่วนตัว</div>';
     }
   });
 
-  // Initial load
+  // Initial check session
   (async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      currentUserId = session.user.id;
-      userStatus.textContent = `ล็อกอินแล้ว: ${session.user.email || 'Google User'}`;
-      addBtn.disabled = false;
-      await loadAndRender();
-    } else {
-      userStatus.textContent = 'กรุณาล็อกอินด้วย Google';
-      addBtn.disabled = true;
-      list.innerHTML = '<div class="empty">ล็อกอินเพื่อดูลิงก์</div>';
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        currentUserId = session.user.id;
+        userStatus.textContent = `ล็อกอินแล้ว: ${session.user.email || 'Google User'}`;
+        addBtn.disabled = false;
+        await loadAndRender();
+      } else {
+        userStatus.textContent = 'กรุณาล็อกอินด้วย Google';
+        addBtn.disabled = true;
+        list.innerHTML = '<div class="empty">ล็อกอินเพื่อดูลิงก์</div>';
+      }
+    } catch (err) {
+      console.error('Initial session error:', err);
+      list.innerHTML = '<div class="empty">เชื่อมต่อ Supabase ล้มเหลว</div>';
     }
   })();
 </script>
